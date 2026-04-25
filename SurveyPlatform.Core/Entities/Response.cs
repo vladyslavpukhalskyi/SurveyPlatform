@@ -1,12 +1,12 @@
-namespace SurveyPlatform.Core.Entities;
+using SurveyPlatform.Core.Entities;
 
 public class Response
 {
     public Guid Id { get; set; }
     public Guid SurveyId { get; set; }
     public string RespondentEmail { get; set; } = string.Empty;
-    public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+    public DateTime SubmittedAt { get; set; }
 
-    public Survey? Survey { get; set; }
+    // Додай цей рядок:
     public List<Answer> Answers { get; set; } = new();
 }
