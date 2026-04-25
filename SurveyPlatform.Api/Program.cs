@@ -30,6 +30,31 @@ app.UseAuthorization();
 // 4. Мапимо контролери
 app.MapControllers();
 
+// Автоматичне створення бази та наповнення при старті (тільки для розробки)
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var context = services.GetRequiredService<SurveyDbContext>();
+    
+    // Створюємо таблиці, якщо їх немає
+    await context.Database.EnsureCreatedAsync();
+
+    // Перевіряємо, чи база порожня
+    if (!await context.Surveys.AnyAsync())
+    {
+        // Тут можна викликати логіку наповнення, яку ми писали для тестів
+        // Або для швидкої перевірки просто додати одне опитування:
+        context.Surveys.Add(new Survey 
+        { 
+            Id = Guid.NewGuid(), 
+            Title = "Load Test Survey", 
+            IsActive = true, 
+            ExpiresAt = DateTime.UtcNow.AddDays(10) 
+        });
+        await context.SaveChangesAsync();
+    }
+}
+
 app.Run();
 
 public partial class Program { }

@@ -25,14 +25,14 @@ public class SurveyDbContext : DbContext
         // 2. Зв'язок Survey -> Questions
         modelBuilder.Entity<Survey>()
             .HasMany(s => s.Questions)
-            .WithOne() // Вказуємо порожнім, якщо в Question немає властивості public Survey Survey
+            .WithOne() 
             .HasForeignKey(q => q.SurveyId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // 3. Зв'язок Question -> Options
         modelBuilder.Entity<Question>()
             .HasMany(q => q.Options)
-            .WithOne()
+            .WithOne(o => o.Question) // Вказуємо навігаційну властивість
             .HasForeignKey(o => o.QuestionId)
             .OnDelete(DeleteBehavior.Cascade);
 
@@ -46,11 +46,18 @@ public class SurveyDbContext : DbContext
         // 5. Зв'язок Response -> Answers
         modelBuilder.Entity<Response>()
             .HasMany(r => r.Answers)
-            .WithOne()
+            .WithOne(a => a.Response) // Вказуємо навігаційну властивість
             .HasForeignKey(a => a.ResponseId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // 6. Додаткові налаштування порядку
+        // 6. Зв'язок Answer -> Question (щоб уникнути Shadow Property QuestionId1)
+        modelBuilder.Entity<Answer>()
+            .HasOne(a => a.Question)
+            .WithMany()
+            .HasForeignKey(a => a.QuestionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // 7. Додаткові налаштування порядку
         modelBuilder.Entity<Question>().Property(q => q.Order).IsRequired();
         modelBuilder.Entity<Option>().Property(o => o.Order).IsRequired();
     }
