@@ -52,4 +52,59 @@ public class SurveysController : ControllerBase
 
         return survey;
     }
+    [HttpPost("{id}/respond")]
+    public async Task<IActionResult> Respond(Guid id, [FromBody] Response responseRequest)
+    {
+        // 1. Шукаємо опитування
+        var survey = await _context.Surveys
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == id);
+
+        if (survey == null) return NotFound("Опитування не знайдено.");
+
+        // 2. Перевірка: чи активне воно?
+        if (!survey.IsActive || survey.ExpiresAt < DateTime.UtcNow)
+        {
+            return BadRequest("Це опитування вже неактивне або завершене.");
+        }
+
+        // 3. Перевірка: чи цей email вже відповідав?
+        var alreadyResponded = await _context.Responses
+            .AnyAsync(r => r.SurveyId == id && r.RespondentEmail == responseRequest.RespondentEmail);
+    
+        if (alreadyResponded)
+        {
+            return BadRequest("Ви вже брали участь у цьому опитуванні.");
+        }
+
+        // 4. Валідація відповідей (Answers)
+        foreach (var question in survey.Questions)
+        {
+            var answer = responseRequest.Answers.FirstOrDefault(a => a.QuestionId == question.Id);
+
+            // Перевірка на обов'язковість
+            if (question.IsRequired && (answer == null || string.IsNullOrWhiteSpace(answer.Value)))
+            {
+                return BadRequest($"Питання '{question.Text}' є обов'язковим.");
+            }
+
+            // Перевірка Rating (якщо тип питання - Rating)
+            if (question.Type == QuestionType.Rating && answer != null)
+            {
+                if (!int.TryParse(answer.Value, out int rating) || rating < 1 || rating > 5)
+                {
+                    return BadRequest("Оцінка повинна бути від 1 до 5.");
+                }
+            }
+        }
+
+        // 5. Збереження
+        responseRequest.SurveyId = id;
+        responseRequest.SubmittedAt = DateTime.UtcNow;
+    
+        _context.Responses.Add(responseRequest);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = "Дякуємо! Ваша відповідь збережена." });
+    }
 }
