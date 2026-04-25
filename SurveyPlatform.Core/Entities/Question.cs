@@ -1,4 +1,4 @@
-namespace SurveyPlatform.Core.Entities;
+using SurveyPlatform.Core.Entities;
 
 public class Question
 {
@@ -9,7 +9,7 @@ public class Question
     public bool IsRequired { get; set; }
     public int Order { get; set; }
 
-    // Зв'язки
-    public Survey? Survey { get; set; }
+    // Додай ці рядки:
     public List<Option> Options { get; set; } = new();
+    public List<Answer> Answers { get; set; } = new();
 }

@@ -22,22 +22,35 @@ public class SurveyDbContext : DbContext
             .HasIndex(r => new { r.SurveyId, r.RespondentEmail })
             .IsUnique();
 
-        // 2. Налаштування зв'язків та каскадного видалення
-        // Видаляємо опитування — видаляються всі питання
+        // 2. Зв'язок Survey -> Questions
         modelBuilder.Entity<Survey>()
             .HasMany(s => s.Questions)
-            .WithOne(q => q.Survey)
+            .WithOne() // Вказуємо порожнім, якщо в Question немає властивості public Survey Survey
             .HasForeignKey(q => q.SurveyId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Видаляємо питання — видаляються варіанти відповідей (Options)
+        // 3. Зв'язок Question -> Options
         modelBuilder.Entity<Question>()
             .HasMany(q => q.Options)
-            .WithOne(o => o.Question)
+            .WithOne()
             .HasForeignKey(o => o.QuestionId)
             .OnDelete(DeleteBehavior.Cascade);
-            
-        // 3. Зберігаємо порядок питань та опцій
+
+        // 4. Зв'язок Survey -> Responses
+        modelBuilder.Entity<Survey>()
+            .HasMany(s => s.Responses)
+            .WithOne()
+            .HasForeignKey(r => r.SurveyId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // 5. Зв'язок Response -> Answers
+        modelBuilder.Entity<Response>()
+            .HasMany(r => r.Answers)
+            .WithOne()
+            .HasForeignKey(a => a.ResponseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // 6. Додаткові налаштування порядку
         modelBuilder.Entity<Question>().Property(q => q.Order).IsRequired();
         modelBuilder.Entity<Option>().Property(o => o.Order).IsRequired();
     }
