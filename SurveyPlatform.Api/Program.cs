@@ -1,16 +1,17 @@
 using Microsoft.EntityFrameworkCore;
 using SurveyPlatform.Infrastructure;
+using SurveyPlatform.Core.Entities; // Додано для доступу до Survey
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Додаємо підтримку контролерів (замість Minimal API)
+// 1. Додаємо підтримку контролерів
 builder.Services.AddControllers();
 
 // 2. Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// 3. Реєструємо DbContext з використанням PostgreSQL
+// 3. Реєструємо DbContext
 builder.Services.AddDbContext<SurveyDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -24,13 +25,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseAuthorization();
-
-// 4. Мапимо контролери
 app.MapControllers();
 
-// Автоматичне створення бази та наповнення при старті (тільки для розробки)
+// 4. Автоматичне створення бази та наповнення
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -39,15 +37,17 @@ using (var scope = app.Services.CreateScope())
     // Створюємо таблиці, якщо їх немає
     await context.Database.EnsureCreatedAsync();
 
-    // Перевіряємо, чи база порожня
-    if (!await context.Surveys.AnyAsync())
+    // Наповнюємо ТІЛЬКИ в режимі розробки і якщо база порожня
+    // Це виправить помилку "found 101" у твоїх тестах на GitHub
+    if (app.Environment.IsDevelopment() && !await context.Surveys.AnyAsync())
     {
-        // Тут можна викликати логіку наповнення, яку ми писали для тестів
-        // Або для швидкої перевірки просто додати одне опитування:
         context.Surveys.Add(new Survey 
         { 
             Id = Guid.NewGuid(), 
             Title = "Load Test Survey", 
+            Description = "Initial survey for local testing",
+            CreatedBy = "System",
+            CreatedAt = DateTime.UtcNow,
             IsActive = true, 
             ExpiresAt = DateTime.UtcNow.AddDays(10) 
         });
@@ -57,4 +57,5 @@ using (var scope = app.Services.CreateScope())
 
 app.Run();
 
+// Необхідно для роботи інтеграційних тестів
 public partial class Program { }
