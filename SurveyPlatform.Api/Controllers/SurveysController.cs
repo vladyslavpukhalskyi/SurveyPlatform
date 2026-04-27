@@ -67,101 +67,101 @@ public class SurveysController : ControllerBase
         return Ok(survey);
     }
 
-    // 3. АКТИВУВАТИ/ДЕАКТИВУВАТИ
-    // 3. АКТИВУВАТИ/ДЕАКТИВУВАТИ
+    // 3. ДОДАТИ ВІДПОВІДЬ (RESPOND)
     [HttpPost("{id}/respond")]
-public async Task<IActionResult> Respond(Guid id, [FromBody] Response responseRequest)
-{
-    try
+    public async Task<IActionResult> Respond(Guid id, [FromBody] Response responseRequest)
     {
-        var survey = await _context.Surveys
-            .Include(s => s.Questions)
-            .ThenInclude(q => q.Options)
-            .FirstOrDefaultAsync(s => s.Id == id);
-
-        if (survey == null) return NotFound("Опитування не знайдено.");
-        
-        if (!survey.IsActive || (survey.ExpiresAt != DateTime.MinValue && survey.ExpiresAt < DateTime.UtcNow))
-            return BadRequest("Опитування неактивне або завершене.");
-        
-        var alreadyResponded = await _context.Responses
-            .AnyAsync(r => r.SurveyId == id && r.RespondentEmail == responseRequest.RespondentEmail);
-        
-        if (alreadyResponded) return BadRequest("Ви вже брали участь.");
-
-        // 1. ЗАХИСТ ВІД NULL: Якщо масив відповідей порожній, створюємо пустий список
-        responseRequest.Answers ??= new List<Answer>();
-
-        foreach (var question in survey.Questions)
+        try
         {
-            var answer = responseRequest.Answers.FirstOrDefault(a => a.QuestionId == question.Id);
+            var survey = await _context.Surveys
+                .Include(s => s.Questions)
+                .ThenInclude(q => q.Options)
+                .FirstOrDefaultAsync(s => s.Id == id);
 
-            if (question.IsRequired && (answer == null || string.IsNullOrWhiteSpace(answer.Value)))
-                return BadRequest($"Питання '{question.Text}' є обов'язковим.");
+            if (survey == null) return NotFound("Опитування не знайдено.");
+            
+            if (!survey.IsActive || (survey.ExpiresAt != DateTime.MinValue && survey.ExpiresAt < DateTime.UtcNow))
+                return BadRequest("Опитування неактивне або завершене.");
+            
+            var alreadyResponded = await _context.Responses
+                .AnyAsync(r => r.SurveyId == id && r.RespondentEmail == responseRequest.RespondentEmail);
+            
+            if (alreadyResponded) return BadRequest("Ви вже брали участь.");
 
-            if (answer != null && question.Type == QuestionType.Rating)
+            // ЗАХИСТ ВІД NULL: Якщо масив відповідей порожній, створюємо пустий список
+            responseRequest.Answers ??= new List<Answer>();
+
+            foreach (var question in survey.Questions)
             {
-                if (!int.TryParse(answer.Value, out int r) || r < 1 || r > 5)
-                    return BadRequest("Рейтинг має бути від 1 до 5.");
+                var answer = responseRequest.Answers.FirstOrDefault(a => a.QuestionId == question.Id);
+
+                if (question.IsRequired && (answer == null || string.IsNullOrWhiteSpace(answer.Value)))
+                    return BadRequest($"Питання '{question.Text}' є обов'язковим.");
+
+                if (answer != null && question.Type == QuestionType.Rating)
+                {
+                    if (!int.TryParse(answer.Value, out int r) || r < 1 || r > 5)
+                        return BadRequest("Рейтинг має бути від 1 до 5.");
+                }
+
+                if (answer != null && question.Type == QuestionType.SingleChoice)
+                {
+                    if (!question.Options.Any(o => o.Text == answer.Value))
+                        return BadRequest($"Невалідний варіант для: {question.Text}");
+                }
             }
 
-            if (answer != null && question.Type == QuestionType.SingleChoice)
+            // ГЕНЕРАЦІЯ ID: Явно створюємо нові Guid, щоб уникнути конфліктів у БД
+            if (responseRequest.Id == Guid.Empty) responseRequest.Id = Guid.NewGuid();
+            responseRequest.SurveyId = id;
+            responseRequest.SubmittedAt = DateTime.UtcNow;
+
+            foreach (var ans in responseRequest.Answers)
             {
-                if (!question.Options.Any(o => o.Text == answer.Value))
-                    return BadRequest($"Невалідний варіант для: {question.Text}");
+                if (ans.Id == Guid.Empty) ans.Id = Guid.NewGuid();
             }
+
+            _context.Responses.Add(responseRequest);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = "Відповідь збережена." });
         }
-
-        // 2. ГЕНЕРАЦІЯ ID: Явно створюємо нові Guid, щоб уникнути конфліктів у БД
-        if (responseRequest.Id == Guid.Empty) responseRequest.Id = Guid.NewGuid();
-        responseRequest.SurveyId = id;
-        responseRequest.SubmittedAt = DateTime.UtcNow;
-
-        foreach (var ans in responseRequest.Answers)
+        catch (Exception ex)
         {
-            if (ans.Id == Guid.Empty) ans.Id = Guid.NewGuid();
+            return StatusCode(500, $"КРИТИЧНА ПОМИЛКА: {ex.Message} | ДЕТАЛІ: {ex.InnerException?.Message}");
         }
-
-        _context.Responses.Add(responseRequest);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { Message = "Відповідь збережена." });
-    }
-    catch (Exception ex)
-    {
-        // 3. ДЕБАГ: Якщо щось впаде, ми повернемо текст помилки прямо у відповідь k6!
-        return StatusCode(500, $"КРИТИЧНА ПОМИЛКА: {ex.Message} | ДЕТАЛІ: {ex.InnerException?.Message}");
     }
 
-
-        responseRequest.SurveyId = id;
-        responseRequest.SubmittedAt = DateTime.UtcNow;
-        _context.Responses.Add(responseRequest);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { Message = "Відповідь збережена." });
-    }
-
+    // 4. ОТРИМАТИ РЕЗУЛЬТАТИ
     [HttpGet("{id}/results")]
     public async Task<IActionResult> GetResults(Guid id)
     {
         var totalResponses = await _context.Responses.CountAsync(r => r.SurveyId == id);
-        var results = await _context.Answers
+
+        // 1. Витягуємо лише необхідні поля з БД без спроб математичних конвертацій у SQL
+        var answers = await _context.Answers
             .Include(a => a.Question)
             .Where(a => a.Question.SurveyId == id)
-            .GroupBy(a => new { a.QuestionId, a.Question.Text, a.Question.Type })
+            .Select(a => new { a.QuestionId, a.Question.Text, a.Question.Type, a.Value })
+            .ToListAsync();
+
+        // 2. Робимо групування та розрахунок середнього значення в оперативній пам'яті
+        var results = answers
+            .GroupBy(a => new { a.QuestionId, a.Text, a.Type })
             .Select(g => new
             {
                 QuestionText = g.Key.Text,
                 TotalAnswers = g.Count(),
-                AverageRating = g.Key.Type == QuestionType.Rating ? g.Average(a => Convert.ToDouble(a.Value)) : (double?)null
+                AverageRating = g.Key.Type == QuestionType.Rating 
+                    ? g.Where(a => double.TryParse(a.Value, out _)).Average(a => Convert.ToDouble(a.Value)) 
+                    : (double?)null
             })
-            .ToListAsync();
+            .ToList();
 
         return Ok(new { SurveyId = id, TotalResponses = totalResponses, QuestionsResults = results });
     }
 
-    // 4. ЕКСПОРТУВАТИ РЕЗУЛЬТАТИ
+    // 5. ЕКСПОРТУВАТИ РЕЗУЛЬТАТИ
     [HttpGet("{id}/export")]
     public async Task<IActionResult> ExportResults(Guid id)
     {

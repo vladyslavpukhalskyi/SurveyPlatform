@@ -64,4 +64,44 @@ public class SurveysApiTests : BaseIntegrationTest
         var response = await Client.PostAsJsonAsync($"/api/surveys/{surveyId}/respond", payload);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [Fact]
+    public async Task GetResults_ShouldReturnAggregatedData_WhenSurveyExists()
+    {
+        // Arrange: Знаходимо ID опитування, для якого ТОЧНО є хоча б одна відповідь у БД
+        var responseInDb = await DbContext.Responses.FirstAsync();
+        var surveyId = responseInDb.SurveyId;
+
+        // Act
+        var response = await Client.GetAsync($"/api/surveys/{surveyId}/results");
+
+        // Assert
+        response.EnsureSuccessStatusCode(); 
+        
+        var content = await response.Content.ReadAsStringAsync();
+        
+        content.Should().Contain("totalResponses");
+        content.Should().Contain("questionsResults");
+    }
+
+    [Fact]
+    public async Task ExportResults_ShouldReturnJsonFile_WhenSurveyExists()
+    {
+        // Arrange: Знаходимо ID опитування, для якого ТОЧНО є хоча б одна відповідь у БД
+        var responseInDb = await DbContext.Responses.FirstAsync();
+        var surveyId = responseInDb.SurveyId;
+
+        // Act
+        var response = await Client.GetAsync($"/api/surveys/{surveyId}/export");
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+        
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        response.Content.Headers.ContentDisposition!.FileName.Should().Contain("export.json");
+
+        var exportedData = await response.Content.ReadFromJsonAsync<List<Response>>();
+        exportedData.Should().NotBeNull();
+        exportedData!.Count.Should().BeGreaterThan(0);
+    }
 }
