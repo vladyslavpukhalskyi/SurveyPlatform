@@ -32,28 +32,28 @@ public class SurveyDbContext : DbContext
         // 3. Зв'язок Question -> Options
         modelBuilder.Entity<Question>()
             .HasMany(q => q.Options)
-            .WithOne(o => o.Question) // Вказуємо навігаційну властивість
+            .WithOne(o => o.Question)
             .HasForeignKey(o => o.QuestionId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // 4. Зв'язок Survey -> Responses
         modelBuilder.Entity<Survey>()
             .HasMany(s => s.Responses)
-            .WithOne()
+            .WithOne(r => r.Survey) // ВИПРАВЛЕНО: Вказали навігаційну властивість
             .HasForeignKey(r => r.SurveyId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // 5. Зв'язок Response -> Answers
         modelBuilder.Entity<Response>()
             .HasMany(r => r.Answers)
-            .WithOne(a => a.Response) // Вказуємо навігаційну властивість
+            .WithOne(a => a.Response)
             .HasForeignKey(a => a.ResponseId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // 6. Зв'язок Answer -> Question (щоб уникнути Shadow Property QuestionId1)
+        // 6. Зв'язок Answer -> Question
         modelBuilder.Entity<Answer>()
             .HasOne(a => a.Question)
-            .WithMany()
+            .WithMany(q => q.Answers) // ВИПРАВЛЕНО: Вказали навігаційну властивість
             .HasForeignKey(a => a.QuestionId)
             .OnDelete(DeleteBehavior.Cascade);
 

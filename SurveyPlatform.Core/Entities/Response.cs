@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization; // Обов'язково додай цей using
+using System.Text.Json.Serialization;
 
 namespace SurveyPlatform.Core.Entities;
 
@@ -9,9 +9,8 @@ public class Response
     public string RespondentEmail { get; set; } = string.Empty;
     public DateTime SubmittedAt { get; set; }
 
-    public List<Answer> Answers { get; set; } = new();
-
-    // РОБИМО ВЛАСТИВІСТЬ ОПЦІОНАЛЬНОЮ ДЛЯ JSON ВАЛІДАТОРА
     [JsonIgnore]
     public Survey? Survey { get; set; }
+
+    public List<Answer> Answers { get; set; } = new();
 }

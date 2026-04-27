@@ -9,7 +9,6 @@ public class Answer
     public Guid QuestionId { get; set; }
     public string Value { get; set; } = string.Empty;
 
-    // ІГНОРУЄМО ЦІ ПОЛЯ ПРИ СЕРІАЛІЗАЦІЇ
     [JsonIgnore]
     public Response? Response { get; set; }
 
