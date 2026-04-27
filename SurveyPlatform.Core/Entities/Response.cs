@@ -1,4 +1,6 @@
-using SurveyPlatform.Core.Entities;
+using System.Text.Json.Serialization; // Обов'язково додай цей using
+
+namespace SurveyPlatform.Core.Entities;
 
 public class Response
 {
@@ -7,6 +9,9 @@ public class Response
     public string RespondentEmail { get; set; } = string.Empty;
     public DateTime SubmittedAt { get; set; }
 
-    // Додай цей рядок:
     public List<Answer> Answers { get; set; } = new();
+
+    // РОБИМО ВЛАСТИВІСТЬ ОПЦІОНАЛЬНОЮ ДЛЯ JSON ВАЛІДАТОРА
+    [JsonIgnore]
+    public Survey? Survey { get; set; }
 }
