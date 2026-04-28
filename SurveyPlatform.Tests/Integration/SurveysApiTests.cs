@@ -104,4 +104,40 @@ public class SurveysApiTests : BaseIntegrationTest
         exportedData.Should().NotBeNull();
         exportedData!.Count.Should().BeGreaterThan(0);
     }
+
+    [Fact]
+    public async Task CreateSurvey_WithValidData_ShouldReturnCreated()
+    {
+        // Arrange: Готуємо payload для нового опитування
+        var newSurvey = new Survey
+        {
+            Id = Guid.NewGuid(),
+            Title = "Нове опитування через API",
+            Description = "Перевіряємо ендпоінт створення",
+            IsActive = true,
+            ExpiresAt = DateTime.UtcNow.AddDays(7),
+            Questions = new List<Question>
+            {
+                new() 
+                { 
+                    Id = Guid.NewGuid(), 
+                    Text = "Як вам наш API?", 
+                    Type = QuestionType.Rating, 
+                    IsRequired = true, 
+                    Order = 1 
+                }
+            }
+        };
+
+        // Act: Відправляємо POST запит
+        var response = await Client.PostAsJsonAsync("/api/surveys", newSurvey);
+
+        // Assert: Перевіряємо статус 201 Created та повернені дані
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        
+        var createdSurvey = await response.Content.ReadFromJsonAsync<Survey>();
+        createdSurvey.Should().NotBeNull();
+        createdSurvey!.Title.Should().Be(newSurvey.Title);
+        createdSurvey.Questions.Should().HaveCount(1);
+    }
 }
