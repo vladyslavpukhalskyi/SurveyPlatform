@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SurveyPlatform.Api.Controllers;
 using SurveyPlatform.Core.Entities;
 using SurveyPlatform.Infrastructure;
+using SurveyPlatform.Infrastructure.Repositories; // Додано простір імен для репозиторіїв
 using Xunit;
 
 namespace SurveyPlatform.Tests.UnitTests;
@@ -21,7 +22,13 @@ public class ValidationTests
             .Options;
         
         _context = new SurveyDbContext(options);
-        _controller = new SurveysController(_context);
+
+        // Ініціалізуємо репозиторії з In-Memory базою
+        var surveyRepo = new SurveyRepository(_context);
+        var responseRepo = new ResponseRepository(_context);
+
+        // Передаємо репозиторії в оновлений конструктор контролера
+        _controller = new SurveysController(surveyRepo, responseRepo);
     }
 
     [Fact]

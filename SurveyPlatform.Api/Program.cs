@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using SurveyPlatform.Infrastructure;
-using SurveyPlatform.Core.Entities; // Додано для доступу до Survey
+using SurveyPlatform.Core.Entities;
+using SurveyPlatform.Core.Interfaces;
+using SurveyPlatform.Infrastructure.Repositories; // Додано для доступу до Survey
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +17,8 @@ builder.Services.AddSwaggerGen();
 // 3. Реєструємо DbContext
 builder.Services.AddDbContext<SurveyDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddScoped<ISurveyRepository, SurveyRepository>(); 
+builder.Services.AddScoped<IResponseRepository, ResponseRepository>();
 
 var app = builder.Build();
 

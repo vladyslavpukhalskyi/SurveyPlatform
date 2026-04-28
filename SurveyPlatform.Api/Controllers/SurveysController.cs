@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using SurveyPlatform.Core.Entities;
-using SurveyPlatform.Infrastructure;
+using SurveyPlatform.Core.Interfaces;
 using System.Text.Json;
+using SurveyPlatform.Core.DTOs;
 
 namespace SurveyPlatform.Api.Controllers;
 
@@ -10,32 +10,26 @@ namespace SurveyPlatform.Api.Controllers;
 [Route("api/[controller]")]
 public class SurveysController : ControllerBase
 {
-    private readonly SurveyDbContext _context;
+    private readonly ISurveyRepository _surveyRepo;
+    private readonly IResponseRepository _responseRepo;
 
-    public SurveysController(SurveyDbContext context)
+    public SurveysController(ISurveyRepository surveyRepo, IResponseRepository responseRepo)
     {
-        _context = context;
+        _surveyRepo = surveyRepo;
+        _responseRepo = responseRepo;
     }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Survey>>> GetActiveSurveys()
     {
-        var now = DateTime.UtcNow;
-        return await _context.Surveys
-            .Include(s => s.Questions)
-            .Where(s => s.IsActive && (s.ExpiresAt == DateTime.MinValue || s.ExpiresAt > now))
-            .ToListAsync();
+        var surveys = await _surveyRepo.GetActiveSurveysAsync(DateTime.UtcNow);
+        return Ok(surveys);
     }
 
-    // 1. ОТРИМАТИ ОДНЕ ОПИТУВАННЯ (З питаннями та опціями, відсортованими за Order)
     [HttpGet("{id}")]
     public async Task<ActionResult<Survey>> GetSurvey(Guid id)
     {
-        var survey = await _context.Surveys
-            .Include(s => s.Questions.OrderBy(q => q.Order))
-            .ThenInclude(q => q.Options.OrderBy(o => o.Order))
-            .FirstOrDefaultAsync(s => s.Id == id);
-
+        var survey = await _surveyRepo.GetSurveyWithDetailsAsync(id);
         if (survey == null) return NotFound("Опитування не знайдено.");
 
         return Ok(survey);
@@ -44,16 +38,14 @@ public class SurveysController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<Survey>> CreateSurvey(Survey survey)
     {
-        _context.Surveys.Add(survey);
-        await _context.SaveChangesAsync();
+        await _surveyRepo.AddSurveyAsync(survey);
         return CreatedAtAction(nameof(GetSurvey), new { id = survey.Id }, survey);
     }
 
-    // 2. ОНОВИТИ ОПИТУВАННЯ (Назву, опис, дату завершення)
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateSurvey(Guid id, [FromBody] UpdateSurveyDto request)
     {
-        var survey = await _context.Surveys.FindAsync(id);
+        var survey = await _surveyRepo.GetSurveyByIdAsync(id);
         if (survey == null) return NotFound("Опитування не знайдено.");
 
         survey.Title = request.Title;
@@ -63,32 +55,24 @@ public class SurveysController : ControllerBase
             survey.ExpiresAt = request.ExpiresAt.Value.ToUniversalTime();
         }
 
-        await _context.SaveChangesAsync();
+        await _surveyRepo.UpdateSurveyAsync(survey);
         return Ok(survey);
     }
 
-    // 3. ДОДАТИ ВІДПОВІДЬ (RESPOND)
     [HttpPost("{id}/respond")]
     public async Task<IActionResult> Respond(Guid id, [FromBody] Response responseRequest)
     {
         try
         {
-            var survey = await _context.Surveys
-                .Include(s => s.Questions)
-                .ThenInclude(q => q.Options)
-                .FirstOrDefaultAsync(s => s.Id == id);
-
+            var survey = await _surveyRepo.GetSurveyWithDetailsAsync(id);
             if (survey == null) return NotFound("Опитування не знайдено.");
             
             if (!survey.IsActive || (survey.ExpiresAt != DateTime.MinValue && survey.ExpiresAt < DateTime.UtcNow))
                 return BadRequest("Опитування неактивне або завершене.");
             
-            var alreadyResponded = await _context.Responses
-                .AnyAsync(r => r.SurveyId == id && r.RespondentEmail == responseRequest.RespondentEmail);
-            
+            var alreadyResponded = await _responseRepo.HasUserRespondedAsync(id, responseRequest.RespondentEmail);
             if (alreadyResponded) return BadRequest("Ви вже брали участь.");
 
-            // ЗАХИСТ ВІД NULL: Якщо масив відповідей порожній, створюємо пустий список
             responseRequest.Answers ??= new List<Answer>();
 
             foreach (var question in survey.Questions)
@@ -111,7 +95,6 @@ public class SurveysController : ControllerBase
                 }
             }
 
-            // ГЕНЕРАЦІЯ ID: Явно створюємо нові Guid, щоб уникнути конфліктів у БД
             if (responseRequest.Id == Guid.Empty) responseRequest.Id = Guid.NewGuid();
             responseRequest.SurveyId = id;
             responseRequest.SubmittedAt = DateTime.UtcNow;
@@ -121,9 +104,7 @@ public class SurveysController : ControllerBase
                 if (ans.Id == Guid.Empty) ans.Id = Guid.NewGuid();
             }
 
-            _context.Responses.Add(responseRequest);
-            await _context.SaveChangesAsync();
-
+            await _responseRepo.AddResponseAsync(responseRequest);
             return Ok(new { Message = "Відповідь збережена." });
         }
         catch (Exception ex)
@@ -132,22 +113,14 @@ public class SurveysController : ControllerBase
         }
     }
 
-    // 4. ОТРИМАТИ РЕЗУЛЬТАТИ
     [HttpGet("{id}/results")]
     public async Task<IActionResult> GetResults(Guid id)
     {
-        var totalResponses = await _context.Responses.CountAsync(r => r.SurveyId == id);
+        var totalResponses = await _responseRepo.GetTotalResponsesCountAsync(id);
+        var answers = await _responseRepo.GetAnswersForSurveyResultsAsync(id);
 
-        // 1. Витягуємо лише необхідні поля з БД без спроб математичних конвертацій у SQL
-        var answers = await _context.Answers
-            .Include(a => a.Question)
-            .Where(a => a.Question.SurveyId == id)
-            .Select(a => new { a.QuestionId, a.Question.Text, a.Question.Type, a.Value })
-            .ToListAsync();
-
-        // 2. Робимо групування та розрахунок середнього значення в оперативній пам'яті
         var results = answers
-            .GroupBy(a => new { a.QuestionId, a.Text, a.Type })
+            .GroupBy(a => new { a.QuestionId, a.Question!.Text, a.Question.Type })
             .Select(g => new
             {
                 QuestionText = g.Key.Text,
@@ -161,17 +134,13 @@ public class SurveysController : ControllerBase
         return Ok(new { SurveyId = id, TotalResponses = totalResponses, QuestionsResults = results });
     }
 
-    // 5. ЕКСПОРТУВАТИ РЕЗУЛЬТАТИ
     [HttpGet("{id}/export")]
     public async Task<IActionResult> ExportResults(Guid id)
     {
-        var surveyExists = await _context.Surveys.AnyAsync(s => s.Id == id);
+        var surveyExists = await _surveyRepo.SurveyExistsAsync(id);
         if (!surveyExists) return NotFound("Опитування не знайдено.");
 
-        var responses = await _context.Responses
-            .Include(r => r.Answers)
-            .Where(r => r.SurveyId == id)
-            .ToListAsync();
+        var responses = await _responseRepo.GetResponsesWithAnswersAsync(id);
 
         var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
         var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(responses, jsonOptions);
@@ -179,7 +148,3 @@ public class SurveysController : ControllerBase
         return File(jsonBytes, "application/json", $"survey_{id}_export.json");
     }
 }
-
-// DTO класи для нових методів
-public record UpdateSurveyDto(string Title, string Description, DateTime? ExpiresAt);
-public record ActivateSurveyDto(bool IsActive);
