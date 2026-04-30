@@ -8,7 +8,6 @@ public static class DatabaseSeeder
 {
     public static void Seed10KRecords(SurveyDbContext dbContext)
     {
-        // ВИПРАВЛЕНО: Тепер перевіряємо чи є повноцінні дані, а не просто дефолтний 1 запис з EF Core
         if (dbContext.Surveys.Count() > 10) return;
 
         Randomizer.Seed = new Random(42);
@@ -36,7 +35,6 @@ public static class DatabaseSeeder
 
             for (int i = 1; i <= 5; i++)
             {
-                // ВИПРАВЛЕНО: Перше питання гарантовано Text, щоб тест на додавання не падав
                 var qType = (i == 1) ? QuestionType.Text : faker.PickRandom<QuestionType>();
                 
                 var question = new Question

@@ -45,7 +45,6 @@ public abstract class BaseIntegrationTest : IAsyncLifetime
 
         await DbContext.Database.EnsureCreatedAsync();
         
-        // Використовуємо правильний сідер
         DatabaseSeeder.DatabaseSeeder.Seed10KRecords(DbContext);
     }
 

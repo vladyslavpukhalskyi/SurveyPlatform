@@ -26,8 +26,6 @@ public class DatabaseTests : BaseIntegrationTest
         // Assert
         Func<Task> act = async () => await DbContext.SaveChangesAsync();
         
-        // Ми прибрали .WithMessage(...), щоб тест не падав через різницю у текстах помилок 
-        // між різними драйверами баз даних. Головне, що Entity Framework кидає DbUpdateException.
         await act.Should().ThrowAsync<DbUpdateException>();
     }
 
@@ -57,13 +55,12 @@ public class DatabaseTests : BaseIntegrationTest
         var surveyId = Guid.NewGuid();
         var survey = new Survey { Id = surveyId, Title = "Order Test", IsActive = true };
         
-        // Створюємо питання з перемішаним Order
         var q1 = new Question { Id = Guid.NewGuid(), SurveyId = surveyId, Text = "First", Order = 1, Type = QuestionType.Text };
         var q3 = new Question { Id = Guid.NewGuid(), SurveyId = surveyId, Text = "Third", Order = 3, Type = QuestionType.Text };
         var q2 = new Question { Id = Guid.NewGuid(), SurveyId = surveyId, Text = "Second", Order = 2, Type = QuestionType.Text };
         
         DbContext.Surveys.Add(survey);
-        DbContext.Questions.AddRange(q3, q1, q2); // Додаємо у БД врозкид
+        DbContext.Questions.AddRange(q3, q1, q2); 
         await DbContext.SaveChangesAsync();
 
         // Act

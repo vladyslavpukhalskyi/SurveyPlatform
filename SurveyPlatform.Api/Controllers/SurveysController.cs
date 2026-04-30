@@ -34,10 +34,35 @@ public class SurveysController : ControllerBase
 
         return Ok(survey);
     }
-
+    
     [HttpPost]
-    public async Task<ActionResult<Survey>> CreateSurvey(Survey survey)
+    public async Task<ActionResult<Survey>> CreateSurvey([FromBody] CreateSurveyDto dto)
     {
+        var survey = new Survey
+        {
+            Id = Guid.NewGuid(),
+            Title = dto.Title,
+            Description = dto.Description,
+            CreatedBy = dto.CreatedBy,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true,
+            ExpiresAt = dto.ExpiresAt.ToUniversalTime(),
+            Questions = dto.Questions.Select(q => new Question
+            {
+                Id = Guid.NewGuid(),
+                Text = q.Text,
+                Type = (QuestionType)q.Type,
+                IsRequired = q.IsRequired,
+                Order = q.Order,
+                Options = q.Options?.Select(o => new Option
+                {
+                    Id = Guid.NewGuid(),
+                    Text = o.Text,
+                    Order = o.Order
+                }).ToList() ?? new List<Option>()
+            }).ToList()
+        };
+
         await _surveyRepo.AddSurveyAsync(survey);
         return CreatedAtAction(nameof(GetSurvey), new { id = survey.Id }, survey);
     }
@@ -58,9 +83,26 @@ public class SurveysController : ControllerBase
         await _surveyRepo.UpdateSurveyAsync(survey);
         return Ok(survey);
     }
+    
+    [HttpPatch("{id}/activate")]
+    public async Task<IActionResult> ActivateDeactivateSurvey(Guid id, [FromBody] ActivateSurveyDto request)
+    {
+        var survey = await _surveyRepo.GetSurveyByIdAsync(id);
+        if (survey == null) return NotFound("Опитування не знайдено.");
 
+        survey.IsActive = request.IsActive;
+        
+        await _surveyRepo.UpdateSurveyAsync(survey);
+
+        return Ok(new 
+        { 
+            Message = $"Опитування {(request.IsActive ? "активовано" : "деактивовано")}.", 
+            IsActive = survey.IsActive 
+        });
+    }
+    
     [HttpPost("{id}/respond")]
-    public async Task<IActionResult> Respond(Guid id, [FromBody] Response responseRequest)
+    public async Task<IActionResult> Respond(Guid id, [FromBody] CreateResponseDto dto)
     {
         try
         {
@@ -70,14 +112,14 @@ public class SurveysController : ControllerBase
             if (!survey.IsActive || (survey.ExpiresAt != DateTime.MinValue && survey.ExpiresAt < DateTime.UtcNow))
                 return BadRequest("Опитування неактивне або завершене.");
             
-            var alreadyResponded = await _responseRepo.HasUserRespondedAsync(id, responseRequest.RespondentEmail);
+            var alreadyResponded = await _responseRepo.HasUserRespondedAsync(id, dto.RespondentEmail);
             if (alreadyResponded) return BadRequest("Ви вже брали участь.");
 
-            responseRequest.Answers ??= new List<Answer>();
-
+            var answersDto = dto.Answers ?? new List<CreateAnswerDto>();
+            
             foreach (var question in survey.Questions)
             {
-                var answer = responseRequest.Answers.FirstOrDefault(a => a.QuestionId == question.Id);
+                var answer = answersDto.FirstOrDefault(a => a.QuestionId == question.Id);
 
                 if (question.IsRequired && (answer == null || string.IsNullOrWhiteSpace(answer.Value)))
                     return BadRequest($"Питання '{question.Text}' є обов'язковим.");
@@ -94,17 +136,22 @@ public class SurveysController : ControllerBase
                         return BadRequest($"Невалідний варіант для: {question.Text}");
                 }
             }
-
-            if (responseRequest.Id == Guid.Empty) responseRequest.Id = Guid.NewGuid();
-            responseRequest.SurveyId = id;
-            responseRequest.SubmittedAt = DateTime.UtcNow;
-
-            foreach (var ans in responseRequest.Answers)
+            
+            var responseEntity = new Response
             {
-                if (ans.Id == Guid.Empty) ans.Id = Guid.NewGuid();
-            }
+                Id = Guid.NewGuid(),
+                SurveyId = id,
+                RespondentEmail = dto.RespondentEmail,
+                SubmittedAt = DateTime.UtcNow,
+                Answers = answersDto.Select(a => new Answer
+                {
+                    Id = Guid.NewGuid(),
+                    QuestionId = a.QuestionId,
+                    Value = a.Value
+                }).ToList()
+            };
 
-            await _responseRepo.AddResponseAsync(responseRequest);
+            await _responseRepo.AddResponseAsync(responseEntity);
             return Ok(new { Message = "Відповідь збережена." });
         }
         catch (Exception ex)

@@ -6,7 +6,7 @@ public class Option
     
     public Guid QuestionId { get; set; }
     
-    [ForeignKey(nameof(QuestionId))] // Явно вказуємо зв'язок
+    [ForeignKey(nameof(QuestionId))] 
     public Question? Question { get; set; }
 
     public string Text { get; set; } = string.Empty;

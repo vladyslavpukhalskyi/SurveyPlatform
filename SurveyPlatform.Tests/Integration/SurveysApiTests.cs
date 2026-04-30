@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using SurveyPlatform.Core.DTOs;
 using SurveyPlatform.Core.Entities;
 using SurveyPlatform.Tests.Abstractions;
 using Xunit;
@@ -31,8 +32,6 @@ public class SurveysApiTests : BaseIntegrationTest
     [Fact]
     public async Task Respond_WithValidData_ShouldReturnOk()
     {
-        // Створюємо ізольоване опитування лише з ОДНИМ питанням, 
-        // щоб обійти проблему "5 обов'язкових питань" із сідеру.
         var surveyId = Guid.NewGuid();
         var questionId = Guid.NewGuid();
         
@@ -51,7 +50,6 @@ public class SurveysApiTests : BaseIntegrationTest
         DbContext.Surveys.Add(testSurvey);
         await DbContext.SaveChangesAsync();
         
-        // Відправляємо відповідь саме на це одне питання
         var payload = new Response
         {
             RespondentEmail = $"new_respondent_{Guid.NewGuid()}@test.com",
@@ -68,7 +66,7 @@ public class SurveysApiTests : BaseIntegrationTest
     [Fact]
     public async Task GetResults_ShouldReturnAggregatedData_WhenSurveyExists()
     {
-        // Arrange: Знаходимо ID опитування, для якого ТОЧНО є хоча б одна відповідь у БД
+        // Arrange
         var responseInDb = await DbContext.Responses.FirstAsync();
         var surveyId = responseInDb.SurveyId;
 
@@ -87,7 +85,7 @@ public class SurveysApiTests : BaseIntegrationTest
     [Fact]
     public async Task ExportResults_ShouldReturnJsonFile_WhenSurveyExists()
     {
-        // Arrange: Знаходимо ID опитування, для якого ТОЧНО є хоча б одна відповідь у БД
+        // Arrange
         var responseInDb = await DbContext.Responses.FirstAsync();
         var surveyId = responseInDb.SurveyId;
 
@@ -108,7 +106,7 @@ public class SurveysApiTests : BaseIntegrationTest
     [Fact]
     public async Task CreateSurvey_WithValidData_ShouldReturnCreated()
     {
-        // Arrange: Готуємо payload для нового опитування
+        // Arrange
         var newSurvey = new Survey
         {
             Id = Guid.NewGuid(),
@@ -129,15 +127,42 @@ public class SurveysApiTests : BaseIntegrationTest
             }
         };
 
-        // Act: Відправляємо POST запит
+        // Act
         var response = await Client.PostAsJsonAsync("/api/surveys", newSurvey);
 
-        // Assert: Перевіряємо статус 201 Created та повернені дані
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         
         var createdSurvey = await response.Content.ReadFromJsonAsync<Survey>();
         createdSurvey.Should().NotBeNull();
         createdSurvey!.Title.Should().Be(newSurvey.Title);
         createdSurvey.Questions.Should().HaveCount(1);
+    }
+    [Fact]
+    public async Task ActivateDeactivateSurvey_ShouldChangeStatus_WhenSurveyExists()
+    {
+        // Arrange
+        var newSurvey = new Survey 
+        { 
+            Title = "Test Patch Survey", 
+            IsActive = false 
+        };
+    
+        var createResponse = await Client.PostAsJsonAsync("/api/surveys", newSurvey);
+        var createdSurvey = await createResponse.Content.ReadFromJsonAsync<Survey>();
+        var surveyId = createdSurvey!.Id;
+
+        var patchRequest = new ActivateSurveyDto(true); 
+
+        // Act
+        var patchResponse = await Client.PatchAsJsonAsync($"/api/surveys/{surveyId}/activate", patchRequest);
+
+        // Assert
+        patchResponse.EnsureSuccessStatusCode();
+        
+        var getResponse = await Client.GetAsync($"/api/surveys/{surveyId}");
+        var updatedSurvey = await getResponse.Content.ReadFromJsonAsync<Survey>();
+    
+        updatedSurvey!.IsActive.Should().BeTrue();
     }
 }
